@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Henrique Almeida <me@h3nc4.com>
+
+name: Scan with SonarQube
+description: >
+  Decides which SonarQube project a CI run writes to, so the default branch keeps one history
+  and every pull request scans under a throwaway, then runs the repository's own scan script.
+author: Henrique Almeida
+
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  host-url:
+    description: >
+      SonarQube to scan against, exported as SONAR_HOST_URL. Left empty the scan script's own
+      default applies, which is what a workstation run already relies on.
+    required: false
+    default: ""
+  token:
+    description: Scanner token, exported as SONAR_TOKEN.
+    required: true
+  script:
+    description: >
+      The scan itself, which stays in the repository because a pre-push hook runs it too. It is
+      handed SONAR_PROJECT_KEY, and -d for a throwaway project it should delete afterwards.
+    required: false
+    default: ./scripts/sonar.sh
+  properties-file:
+    description: >
+      Scanner properties the official project key is read from. That file already decides which
+      project the default branch writes, so reading it here keeps one fact in one place.
+    required: false
+    default: sonar-project.properties
+  key:
+    description: >
+      Official project key, overriding the properties file. For a project whose key lives
+      somewhere this cannot read.
+    required: false
+    default: ""
+  gate:
+    description: >
+      Quality gate to hold this project to, exported as SONAR_GATE. Left empty the scan script
+      decides, which is the right place for it when a pre-push run needs the same gate.
+    required: false
+    default: ""
+  default-branch:
+    description: >
+      Branch that writes the official project. Every other ref, and every pull request, gets a
+      throwaway, so a feature branch cannot overwrite the history the default branch built.
+    required: false
+    default: ${{ github.event.repository.default_branch || 'main' }}
+
+outputs:
+  project-key:
+    description: Project the scan wrote to.
+    value: ${{ steps.scan.outputs.project-key }}
+  throwaway:
+    description: Whether that project was a throwaway, deleted once the scan passed.
+    value: ${{ steps.scan.outputs.throwaway }}
+
+runs:
+  using: composite
+  steps:
+    - id: scan
+      shell: sh
+      run: "${{ github.action_path }}/scan.sh"
+      env:
+        SONAR_HOST_URL: ${{ inputs.host-url }}
+        SONAR_TOKEN: ${{ inputs.token }}
+        SCAN_SCRIPT: ${{ inputs.script }}
+        PROPERTIES_FILE: ${{ inputs.properties-file }}
+        PROJECT_KEY: ${{ inputs.key }}
+        GATE: ${{ inputs.gate }}
+        DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        EVENT_NAME: ${{ github.event_name }}
+        REF_NAME: ${{ github.ref_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}

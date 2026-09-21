@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Henrique Almeida <me@h3nc4.com>
+
+name: CI
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Lint shell scripts
+        run: shellcheck -o all scan.sh tests/*.sh
+
+  test:
+    name: Test scan.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Exercise every project the action can choose
+        run: ./tests/scan.test.sh
+
+  pull-request:
+    name: Use the action, pull request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Scan under a throwaway
+        id: sonar
+        uses: ./
+        with:
+          token: not-a-real-token
+          script: ./tests/fixture/sonar.sh
+          properties-file: tests/fixture/sonar-project.properties
+          gate: fixture-gate
+      - name: The throwaway is named after the pull request and deleted
+        if: github.event_name == 'pull_request'
+        run: |
+          test "${{ steps.sonar.outputs.project-key }}" = "fixture-pr-${{ github.event.pull_request.number }}"
+          test "${{ steps.sonar.outputs.throwaway }}" = "true"
+      - name: A push to main writes the official project
+        if: github.event_name == 'push'
+        run: |
+          test "${{ steps.sonar.outputs.project-key }}" = "fixture"
+          test "${{ steps.sonar.outputs.throwaway }}" = "false"
+      - name: The gate and the key reached the scan script
+        run: |
+          test "$(sed -n 's/^gate=//p' "${RUNNER_TEMP}/fixture-scan")" = "fixture-gate"
+          test "$(sed -n 's/^key=//p' "${RUNNER_TEMP}/fixture-scan")" = "${{ steps.sonar.outputs.project-key }}"
