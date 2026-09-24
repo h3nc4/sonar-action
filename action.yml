@@ -23,10 +23,19 @@ inputs:
     required: true
   script:
     description: >
-      The scan itself, which stays in the repository because a pre-push hook runs it too. It is
-      handed SONAR_PROJECT_KEY, and -d for a throwaway project it should delete afterwards.
+      The scan itself, which a pre-push hook runs too. It is handed SONAR_PROJECT_KEY, and -d
+      for a throwaway project it should delete afterwards. With image set this names a path
+      inside that image instead of one in the checkout.
     required: false
     default: ./scripts/sonar.sh
+  image:
+    description: >
+      Image the scan is copied out of, for a project whose scan lives in the dev container every
+      repository shares rather than in its own tree. The copy then runs on the runner exactly as
+      a repository script would, so the scanner container it starts and the workspace it mounts
+      are unchanged. h3nc4/dev-image-action's image output names the right one.
+    required: false
+    default: ""
   properties-file:
     description: >
       Scanner properties the official project key is read from. That file already decides which
@@ -70,6 +79,7 @@ runs:
         SONAR_HOST_URL: ${{ inputs.host-url }}
         SONAR_TOKEN: ${{ inputs.token }}
         SCAN_SCRIPT: ${{ inputs.script }}
+        SCAN_IMAGE: ${{ inputs.image }}
         PROPERTIES_FILE: ${{ inputs.properties-file }}
         PROJECT_KEY: ${{ inputs.key }}
         GATE: ${{ inputs.gate }}

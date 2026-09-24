@@ -19,6 +19,22 @@ script="${SCAN_SCRIPT:-./scripts/sonar.sh}"
 properties="${PROPERTIES_FILE:-sonar-project.properties}"
 default_branch="${DEFAULT_BRANCH:-main}"
 
+# A scan that lives in the dev container is copied out and run here rather than run inside it.
+# It only shells out to the scanner image, which the runner does as well as the container would.
+if [ -n "${SCAN_IMAGE:-}" ]; then
+  copy="${RUNNER_TEMP:-/tmp}/sonar-action-scan"
+  if ! docker run --rm --entrypoint cat "${SCAN_IMAGE}" "${script}" >"${copy}"; then
+    echo "${script} could not be read out of ${SCAN_IMAGE}." >&2
+    exit 1
+  fi
+  if [ ! -s "${copy}" ]; then
+    echo "${script} is empty in ${SCAN_IMAGE}, so there is nothing to run." >&2
+    exit 1
+  fi
+  chmod +x "${copy}"
+  script="${copy}"
+fi
+
 if [ ! -x "${script}" ]; then
   echo "${script} is not an executable file. The scan itself stays in the repository, so" \
     "point the script input at it, or commit it with the executable bit set." >&2

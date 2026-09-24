@@ -41,6 +41,21 @@ to choose.
 A script it calls needs to accept `-d` and honour `SONAR_PROJECT_KEY`. That is the whole
 contract.
 
+A repository whose scan sits in the dev container every repository shares, rather than in its
+own tree, names that image in `image` and the path inside it in `script`. The action copies the
+file out and runs it on the runner, so nothing about the scan changes. Pair it with
+`h3nc4/dev-image-action`, whose `image` output resolves the pinned or candidate image:
+
+```yaml
+- id: dev
+  uses: h3nc4/dev-image-action@v2
+- uses: h3nc4/sonar-action@v1
+  with:
+    token: ${{ secrets.SONAR_TOKEN }}
+    image: ${{ steps.dev.outputs.image }}
+    script: /usr/local/bin/sonar
+```
+
 ## Quality gates
 
 A gate belongs to a project, and a project created on the fly by a scan inherits the server
@@ -57,7 +72,8 @@ read it. The input overrides that from a workflow.
 | --- | --- | --- |
 | `token` | required | Scanner token, exported as `SONAR_TOKEN`. |
 | `host-url` | `""` | SonarQube to scan against, exported as `SONAR_HOST_URL`. Empty leaves the script's default. |
-| `script` | `./scripts/sonar.sh` | The scan itself. Must accept `-d` and honour `SONAR_PROJECT_KEY`. |
+| `script` | `./scripts/sonar.sh` | The scan itself. Must accept `-d` and honour `SONAR_PROJECT_KEY`. A path inside `image` when that is set. |
+| `image` | `""` | Image the scan is copied out of, for a scan that lives in the dev container rather than the tree. |
 | `properties-file` | `sonar-project.properties` | Where the official project key is read. |
 | `key` | `""` | Official project key, overriding the properties file. |
 | `gate` | `""` | Quality gate, exported as `SONAR_GATE`. Empty leaves it to the script. |
