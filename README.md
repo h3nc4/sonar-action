@@ -4,7 +4,7 @@ Gives every branch its own SonarQube project, so a pull request can be analysed 
 overwriting the history your default branch built.
 
 SonarQube Community Edition analyses one branch per project. Point CI at one project and every
-pull request overwrites main's measures, so the dashboard describes whichever branch scanned
+pull request overwrites main's measures. The dashboard then describes whichever branch scanned
 last. The usual answer is to scan only on main, which is the same as having no gate
 where it matters. This action takes the other route: main keeps the official project, every
 other ref and every pull request scans under a throwaway named after it, and the throwaway is
@@ -31,17 +31,19 @@ This action sets `SONAR_PROJECT_KEY` to the project a run writes to. It does not
 scanner: it hands the work to `./scripts/sonar.sh`, adding `-d` when the project is a throwaway
 to delete afterwards.
 
-A scan is worth running before a push as well as in CI, from a pre-push hook or by hand on a
-workstation, and `scripts/sonar.sh` is what those two reach for. Moving the invocation in here
+A scan runs before a push as well as in CI, from a pre-push hook or by hand on a
+workstation, and `scripts/sonar.sh` is what those two call. Moving the invocation in here
 would leave two implementations of one scan, and the day they disagree is the day CI stops
 testing what developers run. So the script keeps the scanner flags, the memory caps and the
 per-developer project a workstation run uses, and this action supplies the project name CI has
 to choose.
 
-A script it calls needs to accept `-d` and honour `SONAR_PROJECT_KEY`. That is the whole
-contract.
+The contract with that script is four environment variables and one flag. It has to honour
+`SONAR_PROJECT_KEY`, `SONAR_TOKEN`, `SONAR_HOST_URL` and `SONAR_GATE`, and it has to accept `-d`
+as the instruction to delete the project once the scan passes. Anything else about the scan is
+the script's own business.
 
-A repository whose scan sits in the dev container every repository shares, rather than in its
+A repository whose scan sits in the shared dev container, rather than in its
 own tree, names that image in `image` and the path inside it in `script`. The action copies the
 file out and runs it on the runner, so nothing about the scan changes. Pair it with
 `h3nc4/dev-image-action`, whose `image` output resolves the pinned or candidate image:
@@ -63,7 +65,7 @@ default. Pass `gate` when a project needs a different one and the action exports
 for the script to select.
 
 Leaving `gate` empty is usually right. A repository held to a non-default gate needs the same
-gate in its pre-push run, so the name belongs in the script's own default, where both paths
+gate in its pre-push run. The name belongs in the script's own default, where both paths
 read it. The input overrides that from a workflow.
 
 ## Inputs
@@ -72,8 +74,8 @@ read it. The input overrides that from a workflow.
 | --- | --- | --- |
 | `token` | required | Scanner token, exported as `SONAR_TOKEN`. |
 | `host-url` | `""` | SonarQube to scan against, exported as `SONAR_HOST_URL`. Empty leaves the script's default. |
-| `script` | `./scripts/sonar.sh` | The scan itself. Must accept `-d` and honour `SONAR_PROJECT_KEY`. A path inside `image` when that is set. |
-| `image` | `""` | Image the scan is copied out of, for a scan that lives in the dev container rather than the tree. |
+| `script` | `./scripts/sonar.sh` | The scan itself. Must honour the four exported variables and accept `-d`. A path inside `image` when that is set. |
+| `image` | `""` | Image the scan is copied out of, for a scan kept in the dev container rather than the tree. |
 | `properties-file` | `sonar-project.properties` | Where the official project key is read. |
 | `key` | `""` | Official project key, overriding the properties file. |
 | `gate` | `""` | Quality gate, exported as `SONAR_GATE`. Empty leaves it to the script. |
@@ -93,6 +95,6 @@ or a throwaway can be neither made nor deleted. On a self-hosted SonarQube that 
 account in a group holding the `scan` and `provisioning` global permissions, with `admin` on new
 projects through the default permission template.
 
-## Licence
+## License
 
 BSD-2-Clause. See [LICENSE](LICENSE).
