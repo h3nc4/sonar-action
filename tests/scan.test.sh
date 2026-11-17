@@ -24,6 +24,19 @@ printf 'key=%s gate=%s host=%s args=%s\n' \
 STUB
 chmod +x "${work}/sonar.sh"
 
+# Fails with FLAKY_MESSAGE on its first FLAKY_FAILS calls, then passes, counting every call.
+cat >"${work}/flaky.sh" <<'STUB'
+#!/bin/sh
+calls=$(($(cat "${FLAKY_CALLS}" 2>/dev/null || echo 0) + 1))
+echo "${calls}" >"${FLAKY_CALLS}"
+if [ "${calls}" -le "${FLAKY_FAILS}" ]; then
+  echo "${FLAKY_MESSAGE}" >&2
+  exit 1
+fi
+echo "passed"
+STUB
+chmod +x "${work}/flaky.sh"
+
 printf 'sonar.projectKey=fixture\nsonar.projectName=Fixture\n' \
   >"${work}/sonar-project.properties"
 
@@ -112,6 +125,60 @@ fails "a missing scan script is refused" \
 fails "a properties file without a key is refused" \
   env GITHUB_WORKSPACE="${work}" GITHUB_OUTPUT="${work}/output" SCAN_SCRIPT=./sonar.sh \
   PROPERTIES_FILE=./sonar.sh EVENT_NAME=push REF_NAME=main sh "${scan}"
+
+flaky() { # $1=failures before a pass, $2=message, rest: env, reports exit status and calls
+  fails_first="$1"
+  message="$2"
+  shift 2
+  rm -f "${work}/calls"
+  status=0
+  env GITHUB_WORKSPACE="${work}" GITHUB_OUTPUT="${work}/output" SCAN_SCRIPT=./flaky.sh \
+    EVENT_NAME=push REF_NAME=main RETRY_DELAY=0 FLAKY_CALLS="${work}/calls" \
+    FLAKY_FAILS="${fails_first}" FLAKY_MESSAGE="${message}" "$@" sh "${scan}" \
+    >/dev/null 2>&1 || status=$?
+  calls="$(cat "${work}/calls")"
+  printf 'status=%s calls=%s\n' "${status}" "${calls}"
+}
+
+check "a 502 from the server is retried" \
+  "status=0 calls=2" \
+  flaky 1 "ERROR Failed to query server version: GET https://sonar.example.com/api/server/version failed with HTTP 502 Bad Gateway"
+
+check "a 520 on the settings call is retried" \
+  "status=0 calls=2" \
+  flaky 1 "Caused by: java.lang.IllegalStateException: Failed to load global settings: HTTP code 520: error code: 520"
+
+check "a connection the server reset is retried" \
+  "status=0 calls=2" \
+  flaky 1 "Caused by: java.net.SocketException: Connection reset"
+
+check "a connection the server closed is retried" \
+  "status=0 calls=2" \
+  flaky 1 "java.lang.IllegalStateException: Call to URL [https://sonar.example.com/api/v2/analysis/jres/x] failed: closed"
+
+check "retries are bounded" \
+  "status=1 calls=3" \
+  flaky 5 "failed with HTTP 503 Service Unavailable"
+
+check "the retries input sets the bound" \
+  "status=1 calls=1" \
+  flaky 5 "failed with HTTP 503 Service Unavailable" RETRIES=0
+
+check "a failed quality gate is final" \
+  "status=1 calls=1" \
+  flaky 1 "ERROR QUALITY GATE STATUS: FAILED - View details on https://sonar.example.com"
+
+check "a refused token is final" \
+  "status=1 calls=1" \
+  flaky 1 "ERROR Error during SonarScanner CLI execution: HTTP 401 Unauthorized"
+
+check "a broken scan script is final" \
+  "status=1 calls=1" \
+  flaky 1 "SONAR_TOKEN is not set."
+
+fails "a retries input that is not a number is refused" \
+  env GITHUB_WORKSPACE="${work}" GITHUB_OUTPUT="${work}/output" SCAN_SCRIPT=./sonar.sh \
+  EVENT_NAME=push REF_NAME=main RETRIES=two sh "${scan}"
 
 if [ "${failures}" -ne 0 ]; then
   printf '\n%s check(s) failed\n' "${failures}"

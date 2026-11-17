@@ -105,8 +105,44 @@ if [ -n "${GATE:-}" ]; then
   export SONAR_GATE
 fi
 
+# A brief outage of the server would otherwise turn a run red, so a scan that failed on a 5xx or a
+# dropped connection runs again. A gate verdict or a refused token is final and never retried.
+retries="${RETRIES:-2}"
+delay="${RETRY_DELAY:-30}"
+case "${retries}${delay}" in
+  "" | *[!0-9]*)
+    echo "retries and retry-delay take a whole number, got ${retries} and ${delay}." >&2
+    exit 1
+    ;;
+  *) ;;
+esac
+
+attempts="$(mktemp -d)"
+trap 'rm -rf "${attempts}"' EXIT
+
 set --
 if [ -n "${delete}" ]; then
   set -- -d
 fi
-exec "${script}" "$@"
+attempt=1
+while :; do
+  {
+    status=0
+    "${script}" "$@" 2>&1 || status=$?
+    echo "${status}" >"${attempts}/status"
+  } | tee "${attempts}/log"
+  status="$(cat "${attempts}/status")"
+  if [ "${status}" -eq 0 ]; then
+    exit 0
+  fi
+  if [ "${attempt}" -gt "${retries}" ] || grep -q 'QUALITY GATE STATUS' "${attempts}/log"; then
+    exit "${status}"
+  fi
+  if ! grep -Eq 'HTTP (code )?5[0-9][0-9]|Connection reset|IOException: closed|failed: closed' \
+    "${attempts}/log"; then
+    exit "${status}"
+  fi
+  echo "::warning::scan attempt ${attempt} failed on a server error, retrying in ${delay}s"
+  sleep "${delay}"
+  attempt=$((attempt + 1))
+done
