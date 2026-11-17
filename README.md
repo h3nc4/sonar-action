@@ -68,6 +68,10 @@ Leaving `gate` empty is usually right. A repository held to a non-default gate n
 gate in its pre-push run. The name belongs in the script's own default, where both paths
 read it. The input overrides that from a workflow.
 
+## Retries
+
+A scan that fails because the server answered an HTTP 5xx, or reset or closed the connection, runs again after `retry-delay` seconds, up to `retries` more times. A brief outage of the server then passes without a red run. A failed quality gate, a refused token and an error in the scan script are final on the first attempt, since running them again would only repeat the answer.
+
 ## Inputs
 
 | Input | Default | Meaning |
@@ -79,6 +83,8 @@ read it. The input overrides that from a workflow.
 | `properties-file` | `sonar-project.properties` | Where the official project key is read. |
 | `key` | `""` | Official project key, overriding the properties file. |
 | `gate` | `""` | Quality gate, exported as `SONAR_GATE`. Empty leaves it to the script. |
+| `retries` | `2` | Further attempts after a scan that failed on a server error. `0` turns retrying off. |
+| `retry-delay` | `30` | Seconds to wait before each retry. |
 | `default-branch` | the repository's | Branch that writes the official project. |
 
 ## Outputs

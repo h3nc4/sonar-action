@@ -54,6 +54,16 @@ inputs:
       decides, which is the right place for it when a pre-push run needs the same gate.
     required: false
     default: ""
+  retries:
+    description: >
+      How many more times a scan runs after one that failed on a server error, an HTTP 5xx or a
+      connection the server reset or closed. A failed quality gate or any other error is final.
+    required: false
+    default: "2"
+  retry-delay:
+    description: Seconds to wait before each retry, so the server has time to come back.
+    required: false
+    default: "30"
   default-branch:
     description: >
       Branch that writes the official project. Every other ref, and every pull request, gets a
@@ -84,6 +94,8 @@ runs:
         PROJECT_KEY: ${{ inputs.key }}
         GATE: ${{ inputs.gate }}
         DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        RETRIES: ${{ inputs.retries }}
+        RETRY_DELAY: ${{ inputs.retry-delay }}
         EVENT_NAME: ${{ github.event_name }}
         REF_NAME: ${{ github.ref_name }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
