@@ -64,6 +64,14 @@ inputs:
     description: Seconds to wait before each retry, so the server has time to come back.
     required: false
     default: "30"
+  cache:
+    description: >
+      Whether the scanner's user home is kept between runs, so its JRE and plugins download once
+      per server version. Through actions/cache on GitHub, and as a volume on the runner's own
+      docker where HOST_ROOT names the workspace volume, as on Forgejo. The scan script mounts it
+      from SONAR_CACHE.
+    required: false
+    default: "true"
   default-branch:
     description: >
       Branch that writes the official project. Every other ref, and every pull request, gets a
@@ -78,14 +86,31 @@ outputs:
   throwaway:
     description: Whether that project was a throwaway, deleted once the scan passed.
     value: ${{ steps.scan.outputs.throwaway }}
+  analysed:
+    description: Whether the scan returned a gate verdict, passed or failed.
+    value: ${{ steps.scan.outputs.analysed == 'true' }}
 
 runs:
   using: composite
   steps:
+    - id: cache
+      if: inputs.cache == 'true'
+      shell: sh
+      run: "${{ github.action_path }}/cache.sh plan"
+      env:
+        SONAR_HOST_URL: ${{ inputs.host-url }}
+    - id: restore
+      if: steps.cache.outputs.key != ''
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.cache.outputs.path }}
+        key: ${{ steps.cache.outputs.key }}
+        restore-keys: ${{ steps.cache.outputs.prefix }}
     - id: scan
       shell: sh
       run: "${{ github.action_path }}/scan.sh"
       env:
+        SONAR_CACHE: ${{ steps.cache.outputs.mount }}
         SONAR_HOST_URL: ${{ inputs.host-url }}
         SONAR_TOKEN: ${{ inputs.token }}
         SCAN_SCRIPT: ${{ inputs.script }}
@@ -99,3 +124,14 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         REF_NAME: ${{ github.ref_name }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+    - id: ready
+      if: always() && steps.scan.outputs.analysed == 'true' && steps.cache.outputs.path != '' && steps.restore.outputs.cache-hit != 'true'
+      shell: sh
+      run: "${{ github.action_path }}/cache.sh ready"
+      env:
+        CACHE_PATH: ${{ steps.cache.outputs.path }}
+    - if: always() && steps.ready.outputs.ready == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.cache.outputs.path }}
+        key: ${{ steps.cache.outputs.key }}

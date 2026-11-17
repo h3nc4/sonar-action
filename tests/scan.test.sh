@@ -176,6 +176,25 @@ check "a broken scan script is final" \
   "status=1 calls=1" \
   flaky 1 "SONAR_TOKEN is not set."
 
+analysed() { # $1=failures before a pass, $2=message, reports the analysed output it wrote
+  : >"${work}/output"
+  rm -f "${work}/calls"
+  env GITHUB_WORKSPACE="${work}" GITHUB_OUTPUT="${work}/output" SCAN_SCRIPT=./flaky.sh \
+    EVENT_NAME=push REF_NAME=main RETRIES=0 FLAKY_CALLS="${work}/calls" \
+    FLAKY_FAILS="$1" FLAKY_MESSAGE="$2" sh "${scan}" >/dev/null 2>&1 || :
+  sed -n 's/^analysed=//p' "${work}/output"
+}
+
+check "a passing scan is analysed" "true" analysed 0 ""
+
+check "a failed quality gate is analysed" \
+  "true" \
+  analysed 1 "ERROR QUALITY GATE STATUS: FAILED - View details on https://sonar.example.com"
+
+check "a scan the server cut off is not analysed" \
+  "" \
+  analysed 1 "Caused by: java.net.SocketException: Connection reset"
+
 fails "a retries input that is not a number is refused" \
   env GITHUB_WORKSPACE="${work}" GITHUB_OUTPUT="${work}/output" SCAN_SCRIPT=./sonar.sh \
   EVENT_NAME=push REF_NAME=main RETRIES=two sh "${scan}"
