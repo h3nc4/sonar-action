@@ -7,7 +7,7 @@
 # writes the official project and every other ref scans under a throwaway that is deleted.
 #
 # Called by the action beside it, which documents every variable read here. Writes project-key
-# and throwaway to GITHUB_OUTPUT.
+# and throwaway to GITHUB_OUTPUT, and analysed once a scan returns a gate verdict.
 
 set -eu
 
@@ -132,6 +132,10 @@ while :; do
     echo "${status}" >"${attempts}/status"
   } | tee "${attempts}/log"
   status="$(cat "${attempts}/status")"
+  # A gate verdict means every plugin loaded, so the user home is complete enough to cache.
+  if [ "${status}" -eq 0 ] || grep -q 'QUALITY GATE STATUS' "${attempts}/log"; then
+    echo "analysed=true" >>"${GITHUB_OUTPUT}"
+  fi
   if [ "${status}" -eq 0 ]; then
     exit 0
   fi

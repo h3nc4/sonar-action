@@ -43,6 +43,8 @@ The contract with that script is four environment variables and one flag. It has
 as the instruction to delete the project once the scan passes. Anything else about the scan is
 the script's own business.
 
+Mounting `SONAR_CACHE` is optional. A script that leaves it out still scans, and only goes without the [scanner cache](#scanner-cache).
+
 A repository whose scan sits in the shared dev container, rather than in its
 own tree, names that image in `image` and the path inside it in `script`. The action copies the
 file out and runs it on the runner, so nothing about the scan changes. Pair it with
@@ -72,6 +74,12 @@ read it. The input overrides that from a workflow.
 
 A scan that fails because the server answered an HTTP 5xx, or reset or closed the connection, runs again after `retry-delay` seconds, up to `retries` more times. A brief outage of the server then passes without a red run. A failed quality gate, a refused token and an error in the scan script are final on the first attempt, since running them again would only repeat the answer.
 
+## Scanner cache
+
+The scanner downloads a JRE and every analyser plugin from the server into its user home, a few hundred megabytes on each run. The action keeps that directory between runs and hands it to the script as `SONAR_CACHE`, a host directory or a docker volume for the script to mount over the scanner image's `/opt/sonar-scanner/.sonar`. A warm run then loads both from disk.
+
+On GitHub the directory goes through `actions/cache`, keyed on the version `api/server/version` reports. After an upgrade the previous cache is restored and only the changed plugins download. A cache is saved only after a scan that returned a gate verdict and left files behind, so neither a scan cut off mid-download nor a script that ignores `SONAR_CACHE` can claim the key. Where `HOST_ROOT` names the workspace volume, as on Forgejo, the job cannot share a directory with docker, so the cache is the volume `sonar-action-user-home` on the runner's own daemon, which keeps it with no upload. Set `cache` to `false` to scan without either.
+
 ## Inputs
 
 | Input | Default | Meaning |
@@ -85,6 +93,7 @@ A scan that fails because the server answered an HTTP 5xx, or reset or closed th
 | `gate` | `""` | Quality gate, exported as `SONAR_GATE`. Empty leaves it to the script. |
 | `retries` | `2` | Further attempts after a scan that failed on a server error. `0` turns retrying off. |
 | `retry-delay` | `30` | Seconds to wait before each retry. |
+| `cache` | `true` | Keep the scanner's user home between runs, handed to the script as `SONAR_CACHE`. |
 | `default-branch` | the repository's | Branch that writes the official project. |
 
 ## Outputs
@@ -93,6 +102,7 @@ A scan that fails because the server answered an HTTP 5xx, or reset or closed th
 | --- | --- |
 | `project-key` | Project the scan wrote to. |
 | `throwaway` | Whether that project was a throwaway, deleted once the scan passed. |
+| `analysed` | Whether the scan returned a gate verdict, passed or failed. |
 
 ## Server permissions
 
